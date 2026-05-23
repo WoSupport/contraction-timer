@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contraction Timer</title>
+    <style>
+        :root {
+            --bg-color: #f4f7f6;
+            --card-color: #ffffff;
+            --text-color: #333333;
+            --primary-color: #2ec4b6;
+            --stop-color: #e71d36;
+            --alert-bg: #ff9f1c;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: background-color 0.5s ease;
+        }
+
+        .alert-active {
+            --bg-color: #ffebd2;
+            background-color: var(--bg-color);
+        }
+
+        .container {
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+
+        #alert-banner {
+            display: none;
+            background-color: var(--alert-bg);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.8; }
+            100% { opacity: 1; }
+        }
+
+        .main-btn {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            border: none;
+            background-color: var(--primary-color);
+            color: white;
+            font-size: 1.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            outline: none;
+            transition: transform 0.1s, background-color 0.2s;
+            margin: 30px 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .main-btn:active {
+            transform: scale(0.95);
+        }
+
+        .main-btn.active {
+            background-color: var(--stop-color);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--card-color);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .stat-val {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: var(--text-color);
+            margin-top: 5px;
+        }
+
+        .history-list {
+            background: var(--card-color);
+            border-radius: 10px;
+            padding: 10px;
+            max-height: 250px;
+            overflow-y: auto;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            text-align: left;
+        }
+
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            font-size: 0.9rem;
+        }
+
+        .history-item:last-child {
+            border-bottom: none;
+        }
+
+        .clear-btn {
+            background: none;
+            border: 1px solid #ccc;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 15px;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Contraction Tracker</h2>
+    
+    <div id="alert-banner">5-1-1 Rule Met: Contractions are every 5 min or less, lasting 1 min+, for over an hour. Consider calling your doctor/midwife!</div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div>Avg Frequency</div>
+            <div id="avg-freq" class="stat-val">--</div>
+            <small>(Last Hour)</small>
+        </div>
+        <div class="stat-card">
+            <div>Avg Duration</div>
+            <div id="avg-dur" class="stat-val">--</div>
+            <small>(Last Hour)</small>
+        </div>
+    </div>
+
+    <button id="action-btn" class="main-btn">START</button>
+
+    <h3>History</h3>
+    <div class="history-list" id="history">
+        <!-- Logs appear here -->
+    </div>
+    <button class="clear-btn" onclick="clearData()">Clear All Data</button>
+</div>
+
+<script>
+    let contractions = JSON.parse(localStorage.getItem('contractions')) || [];
+    let currentStart = localStorage.getItem('currentStart') ? parseInt(localStorage.getItem('currentStart')) : null;
+
+    const actionBtn = document.getElementById('action-btn');
+    const avgFreqEl = document.getElementById('avg-freq');
+    const avgDurEl = document.getElementById('avg-dur');
+    const historyEl = document.getElementById('history');
+    const alertBanner = document.getElementById('alert-banner');
+
+    // Initialize UI state
+    if (currentStart) {
+        actionBtn.innerText = 'STOP';
+        actionBtn.classList.add('active');
+    }
+    updateUI();
+
+    actionBtn.addEventListener('click', () => {
+        const now = Date.now();
+        
+        if (!currentStart) {
+            // Start contraction
+            currentStart = now;
+            localStorage.setItem('currentStart', currentStart);
+            actionBtn.innerText = 'STOP';
+            actionBtn.classList.add('active');
+        } else {
+            // Stop contraction
+            const duration = Math.round((now - currentStart) / 1000); // in seconds
+            
+            let frequency = null;
+            if (contractions.length > 0) {
+                // Freq is start of this one minus start of previous one
+                frequency = Math.round((currentStart - contractions[0].start) / 1000); 
+            }
+
+            // Unshift inserts at the beginning of the array for easier historical tracking
+            contractions.unshift({
+                start: currentStart,
+                end: now,
+                duration: duration,
+                frequency: frequency
+            });
+
+            localStorage.setItem('contractions', JSON.stringify(contractions));
+            currentStart = null;
+            localStorage.removeItem('currentStart');
+            
+            actionBtn.innerText = 'START';
+            actionBtn.classList.remove('active');
+            updateUI();
+        }
+    });
+
+    function updateUI() {
+        renderHistory();
+        calculateAverages();
+    }
+
+    function renderHistory() {
+        historyEl.innerHTML = '';
+        if (contractions.length === 0) {
+            historyEl.innerHTML = '<div style="text-align:center;color:#888;padding:10px;">No contractions logged yet.</div>';
+            return;
+        }
+
+        contractions.forEach((c) => {
+            const timeStr = new Date(c.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const durStr = `${Math.floor(c.duration / 60)}m ${c.duration % 60}s`;
+            const freqStr = c.frequency ? `${Math.floor(c.frequency / 60)}m` : '--';
+
+            const div = document.createElement('div');
+            div.className = 'history-item';
+            div.innerHTML = `
+                <span><strong>${timeStr}</strong></span>
+                <span>Dur: ${durStr}</span>
+                <span>Gap: ${freqStr}</span>
+            `;
+            historyEl.appendChild(div);
+        });
+    }
+
+    function calculateAverages() {
+        const oneHourAgo = Date.now() - (60 * 60 * 1000);
+        const recent = contractions.filter(c => c.start > oneHourAgo);
+
+        if (recent.length === 0) {
+            avgFreqEl.innerText = '--';
+            avgDurEl.innerText = '--';
+            setAlert(false);
+            return;
+        }
+
+        // Average Duration
+        const totalDur = recent.reduce((sum, c) => sum + c.duration, 0);
+        const avgDurSeconds = totalDur / recent.length;
+        avgDurEl.innerText = formatMinSec(avgDurSeconds);
+
+        // Average Frequency 
+        const recentWithFreq = recent.filter(c => c.frequency !== null);
+        let avgFreqSeconds = null;
+        
+        if (recentWithFreq.length > 0) {
+            const totalFreq = recentWithFreq.reduce((sum, c) => sum + c.frequency, 0);
+            avgFreqSeconds = totalFreq / recentWithFreq.length;
+            avgFreqEl.innerText = formatMinSec(avgFreqSeconds);
+        } else {
+            avgFreqEl.innerText = '--';
+        }
+
+        // Check 5-1-1 Rule
+        if (avgFreqSeconds && avgFreqSeconds <= 300 && avgDurSeconds >= 60 && recent.length >= 3) {
+            setAlert(true);
+        } else {
+            setAlert(false);
+        }
+    }
+
+    function formatMinSec(totalSeconds) {
+        const m = Math.floor(totalSeconds / 60);
+        const s = Math.round(totalSeconds % 60);
+        return `${m}m ${s}s`;
+    }
+
+    function setAlert(isActive) {
+        if (isActive) {
+            alertBanner.style.display = 'block';
+            document.body.classList.add('alert-active');
+        } else {
+            alertBanner.style.display = 'none';
+            document.body.classList.remove('alert-active');
+        }
+    }
+
+    function clearData() {
+        if (confirm("Are you sure you want to clear all history?")) {
+            localStorage.clear();
+            contractions = [];
+            currentStart = null;
+            actionBtn.innerText = 'START';
+            actionBtn.classList.remove('active');
+            updateUI();
+        }
+    }
+</script>
+</body>
+</html>
